@@ -1,0 +1,43 @@
+# Python Virtual Environment
+venv/
+.env
+
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Distribution / build files
+*.egg-info/
+.eggs/
+dist/
+build/
+.tox/
+
+# IDE and Editor files
+.idea/             # IntelliJ IDEA
+.vscode/           # Visual Studio Code
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.Trashes
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sqlite
+*.sqlite3
+
+# Celery specific files
+# Celery may create temporary files for results or state, though usually Redis handles this.
+# If you run Celery with file-based results or state, you might need to add paths here.
+# For Redis backend, this is usually not needed.
+
+# Docker files (if they generate local artifacts not meant for git)
+# If Docker context for build is the root, then no need to ignore .dockerignore here.
+# If you are building local images you might want to ignore those.
+# .dockerignore # Don't ignore .dockerignore itself
+
+# Project specific temporary files
+# Add any other temporary files your project generates

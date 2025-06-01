@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  # Laravel CMS Backend
+  cms_app:
+    build:
+      context: ./apps/cms
+      dockerfile: Dockerfile
+    container_name: bookhub_cms_app
+    restart: always
+    volumes:
+      - ./apps/cms:/var/www/html
+      - ./apps/cms/storage/logs:/var/www/html/storage/logs
+    ports:
+      - "8000:80"
+    environment:
+      APP_NAME: BookHub CMS
+      APP_ENV: local
+      APP_KEY:
+      APP_DEBUG: true
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: bookhub_db
+      DB_USERNAME: bookhub_user
+      DB_PASSWORD: bookhub_password
+      CACHE_DRIVER: redis
+      QUEUE_CONNECTION=redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - db
+      - redis
+    networks:
+      - bookhub_network
+
+  # Next.js Frontend
+  web_app:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile # Đảm bảo file này tồn tại trong bookhub-core/apps/web/
+    container_name: bookhub_web_app
+    restart: always
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules # Tránh mount đè node_modules từ host
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_CMS_API_URL: http://cms_app:80
+    depends_on:
+      - cms_app
+    networks:
+      - bookhub_network
+    command: npm run dev
+
+  # Database PostgreSQL chung cho MVP
+  db:
+    image: postgres:15-alpine
+    container_name: bookhub_db_service
+    restart: always
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: bookhub_db
+      POSTGRES_USER: bookhub_user
+      POSTGRES_PASSWORD: bookhub_password
+    ports:
+      - "5432:5432"
+    networks:
+      - bookhub_network
+
+  # Redis cho Cache và Celery Queue (Dùng chung cho cả CMS và Crawler)
+  redis:
+    image: redis:7-alpine
+    container_name: bookhub_redis_service
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - bookhub_network
+
+  # Batch/Crawler Station - Celery Worker (Python)
+  queue_station:
+    build:
+      # Context là đường dẫn đến thư mục chứa Dockerfile của queue_station
+      context: ../bookhub-queue-station
+      dockerfile: Dockerfile
+    container_name: bookhub_queue_station
+    restart: always
+    volumes:
+      # Mount thư mục code của queue_station vào container
+      - ../bookhub-queue-station:/app
+    environment:
+      # Biến môi trường cho Celery và CMS API client
+      CELERY_BROKER_URL: redis://redis:6379/0 # Sử dụng redis service chung
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # CMS_API_BASE_URL: Sử dụng tên service của Laravel CMS trong Docker network
+      CMS_API_BASE_URL: http://cms_app:80
+    depends_on:
+      - redis
+      - cms_app # Crawler cần CMS để gửi dữ liệu về
+    networks:
+      - bookhub_network
+    # Command để chạy Celery worker
+    command: celery -A app.jobs.crawl_tasks worker --loglevel=info
+
+  # (Tùy chọn) Celery Beat cho lập lịch tác vụ định kỳ
+  # Bạn có thể bỏ qua service này nếu bạn muốn kích hoạt task thủ công hoặc dùng cron job bên ngoài Docker.
+  # Nếu có, nó cần chạy trong một container riêng biệt.
+  # queue_beat:
+  #   build:
+  #     context: ../bookhub-queue-station
+  #     dockerfile: Dockerfile
+  #   container_name: bookhub_queue_beat
+  #   restart: always
+  #   volumes:
+  #     - ../bookhub-queue-station:/app
+  #   environment:
+  #     CELERY_BROKER_URL: redis://redis:6379/0
+  #     CELERY_RESULT_BACKEND: redis://redis:6379/0
+  #     CMS_API_BASE_URL: http://cms_app:80
+  #   depends_on:
+  #     - redis
+  #     - cms_app
+  #   networks:
+  #     - bookhub_network
+  #   command: celery -A app.jobs.crawl_tasks beat --loglevel=info
+
+
+volumes:
+  db_data: # Persistent volume cho dữ liệu PostgreSQL
+
+networks:
+  bookhub_network: # Mạng nội bộ để các service giao tiếp với nhau
+    driver: bridge
